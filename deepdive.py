@@ -179,35 +179,56 @@ REQ = {"n": "Approfondisci la voce #{0} del brief di oggi.", "wl": "Deep dive su
        "who": "Analisi dei wallet che comprano/vendono {0}: usa solo i dati holder forniti e dì chiaramente cosa non si può sapere gratis."}
 
 
-def pick_model(key):
-    if _model["name"]:
-        return _model["name"]
+def pick_models(key):
+    """Elenco ordinato di modelli flash disponibili (il piu' recente prima), per riprovare se uno e' sovraccarico."""
+    if _model.get("list"):
+        return _model["list"]
+    names = []
     try:
         r = requests.get("https://generativelanguage.googleapis.com/v1beta/models", params={"key": key, "pageSize": 100}, timeout=20).json()
-        cands = [m["name"].split("/")[-1] for m in r.get("models", [])
+        names = [m["name"].split("/")[-1] for m in r.get("models", [])
                  if "generateContent" in m.get("supportedGenerationMethods", []) and "flash" in m["name"]
-                 and not any(x in m["name"] for x in ("lite", "image", "tts", "live", "thinking", "exp", "preview"))]
-        cands.sort(key=lambda n: [int(x) for x in re.findall(r"\d+", n)], reverse=True)
-        _model["name"] = cands[0] if cands else "gemini-2.0-flash"
+                 and not any(x in m["name"] for x in ("image", "tts", "live", "thinking", "exp", "preview", "audio"))]
+        names.sort(key=lambda n: ([int(x) for x in re.findall(r"\d+", n)], "lite" not in n), reverse=True)
     except Exception:
-        _model["name"] = "gemini-2.0-flash"
-    return _model["name"]
+        pass
+    _model["list"] = (names[:4] or ["gemini-2.0-flash"])
+    return _model["list"]
 
 
 def llm(prompt):
     key = GEMINI_KEY()
     if not key:
         raise RuntimeError("NO_KEY")
-    model = pick_model(key)
-    r = requests.post(f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent", params={"key": key},
-                      json={"contents": [{"parts": [{"text": prompt}]}],
-                            "generationConfig": {"temperature": 0.25, "maxOutputTokens": 8192}}, timeout=180)
-    if r.status_code == 429:
+    last = ""
+    for model in pick_models(key):
+        for attempt in range(2):
+            try:
+                r = requests.post(f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
+                                  params={"key": key},
+                                  json={"contents": [{"parts": [{"text": prompt}]}],
+                                        "generationConfig": {"temperature": 0.25, "maxOutputTokens": 8192}}, timeout=180)
+            except Exception as e:
+                last = f"{model}: {type(e).__name__}"
+                time.sleep(4)
+                continue
+            if r.status_code == 200:
+                try:
+                    return "".join(p.get("text", "") for p in r.json()["candidates"][0]["content"]["parts"])
+                except Exception:
+                    last = f"{model}: risposta vuota"
+                    break
+            if r.status_code == 429:
+                last = f"{model}: quota"
+                break                      # prova il modello successivo (ogni modello ha la sua quota)
+            last = f"{model}: {r.status_code}"
+            if r.status_code in (500, 502, 503, 504):
+                time.sleep(6)
+                continue
+            break
+    if "quota" in last:
         raise RuntimeError("QUOTA")
-    j = r.json()
-    if r.status_code != 200:
-        raise RuntimeError(f"LLM {r.status_code}: {str(j)[:200]}")
-    return "".join(p.get("text", "") for p in j["candidates"][0]["content"]["parts"])
+    raise RuntimeError("Gemini non disponibile adesso (" + last + "). Riprova tra qualche minuto: la quota di oggi non è stata consumata.")
 
 
 def md_to_html(t):
