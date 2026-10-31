@@ -15,7 +15,7 @@ PER_DAY = int(os.environ.get("DD_PER_DAY", "3"))
 _model = {"name": None}
 
 PATTERNS = [
-    ("n", re.compile(r"^(?:approfondisci|approfondire)\s+#?(\d+)\s*$", re.I)),
+    ("n", re.compile(r"^(?:(?:approfondisci|approfondire|analizza)\s+)?#?(\d{1,3})\s*$", re.I)),
     ("wl", re.compile(r"^deep\s*dive\s+watchlist\s+\$?(\S+)\s*$", re.I)),
     ("cmp", re.compile(r"^confronta\s+(.+?)\s+(?:vs|contro|versus)\s+(.+)$", re.I)),
     ("scn", re.compile(r"^scenario\s+(.+)$", re.I)),
@@ -25,12 +25,19 @@ PATTERNS = [
 ]
 
 
-def parse(text):
+IGNORE = {"ok", "si", "sì", "no", "ciao", "grazie", "bene", "perfetto", "ottimo", "fatto", "ah", "boh", "lol", "yes", "thanks"}
+
+
+def parse(text, auto=True):
+    """Comandi espliciti; altrimenti qualsiasi testo incollato diventa un Deep Analysis ('auto')."""
     t = text.strip()
     for kind, rx in PATTERNS:
         m = rx.match(t)
         if m:
             return kind, [g.strip() for g in m.groups()]
+    t = re.sub(r"^analizza\s+(?:questa|questo)(?:\s+news)?\s*[:\-]?\s*", "", t, flags=re.I).strip()
+    if auto and len(t) >= 3 and t.lower() not in IGNORE:
+        return "auto", [t[:3000]]
     return None
 
 
@@ -123,6 +130,18 @@ def gather(kind, args, idx):
     elif kind == "wl":
         f["coin"] = [coin_facts(args[0])]
         f["notizie"] = _fmt_items(_items_for(f["coin"][0].get("nome") or args[0]))
+    elif kind == "auto":
+        text = args[0]
+        words = re.findall(r"[A-Za-z0-9$À-ÿ.\-]{2,}", text)
+        f["testo_incollato"] = text[:1500]
+        single = len(text.split()) == 1 and re.fullmatch(r"\$?[A-Za-z0-9]{2,12}", text)
+        for tk in dict.fromkeys(re.findall(r"\$([A-Za-z0-9]{2,12})\b", text) + ([text.lstrip("$")] if single else [])):
+            f.setdefault("coin", []).append(coin_facts(tk))
+        f["notizie"] = _fmt_items(_items_for(" ".join(words[:10]) if words else text[:80]))
+        w = core.wl_load()
+        f["watchlist"] = {t: {k: v for k, v in c.items() if k in ("chain", "narrative", "keywords", "catalyst_text", "catalyst_date")}
+                          for t, c in w.items()}
+        f["analisi_precedenti_simili"] = previous_scores(text)
     elif kind in ("dd", "scn", "hist"):
         term = args[0]
         f["oggetto"] = term
@@ -149,12 +168,14 @@ REGOLE ASSOLUTE:
 - Usa ESCLUSIVAMENTE i FATTI forniti sotto (JSON). Non inventare date, fonti, dichiarazioni, contract address, percentuali, precedenti storici. Se un dato non è nei fatti scrivi "non verificato" e perché.
 - Cita le fonti con nome e tier e link presi dai fatti. Se le fonti si contraddicono riporta entrambe e dì quale ha tier migliore.
 - Distingui annuncio ORIGINALE da RIESUMATO guardando le date.
-- Link: scrivili SEMPRE in formato markdown [nome fonte](url), mai URL nudi. Non superare 1500 parole: sii denso, usa tabelle e punti elenco.
+- Link: scrivili SEMPRE in formato markdown [nome fonte](url), mai URL nudi. Non superare 1500 parole (punteggio e tabella restano obbligatori): sii denso, usa tabelle e punti elenco.
 - Nessuna previsione certa e nessun consiglio finanziario: scenari e probabilità qualitative con motivazione.
 - Segnali on-chain: dai solo quelli presenti nei fatti; per il resto indica dove guardare gratis (GMGN, Arkham free, Solscan, DEXScreener) senza inventare valori.
 RICHIESTA: {richiesta}
 STRUTTURA OBBLIGATORIA (titoli in markdown ##):
-## 🔍 DEEP DIVE — oggetto — data
+## 🔍 DEEP ANALYSIS — oggetto — data
+**🎯 PUNTEGGIO DI RILEVANZA: X/100** (OBBLIGATORIO, subito in cima, una riga nel formato esatto "PUNTEGGIO DI RILEVANZA: 74/100"). Poi una tabella con 5 criteri da 0-20 e 2-3 righe di motivazione ciascuno: Forza narrativa (si spiega in una frase? riconoscibile? virale?) · Databilità del catalyst (data precisa e imminente?) · Mappatura coin OG (esistono meme OG morte esposte? quante?) · Segnali on-chain (solo quelli presenti nei fatti; se mancano voto basso e scrivilo) · Tempestività (in anticipo o in ritardo? già prezzato?). Totale = somma. Fascia: 80-100 🔴 prioritaria · 60-79 🟡 interessante · 40-59 🟢 solo contesto · 0-39 ⚫ irrilevante.
+Se in "analisi_precedenti_simili" c'è un punteggio precedente sullo stesso oggetto, spiega perché il punteggio è cambiato.
 Sintesi in 3 righe con verdetto preliminare.
 ## Cronologia (tabella: data | cosa | chi | fonte | tier; segna originale/riesumato)
 ## Stato attuale (catalyst: data, countdown, cosa cambia, probabilità alta/media/bassa motivata; persona: ultime dichiarazioni e pattern; coin: ATH, drawdown, MC, liquidità, volume, holder, segnali)
@@ -173,7 +194,7 @@ FATTI (JSON):
 {fatti}
 """
 
-REQ = {"n": "Approfondisci la voce #{0} del brief di oggi.", "wl": "Deep dive sulla coin in watchlist {0}.",
+REQ = {"auto": "Analizza il testo, ticker o evento incollato dall utente (campo testo_incollato): capisci tu se e una news, un evento, una persona o una coin.", "n": "Analizza la voce #{0} del brief di oggi.", "wl": "Deep dive sulla coin in watchlist {0}.",
        "dd": "Deep dive su: {0}.", "scn": "Analisi scenari (bull/base/bear) su: {0}. Dai più peso alla sezione Scenari.",
        "hist": "Backtesting narrativo su: {0}: quante volte ha pompato, su quali coin, con quali %, SOLO se presente nei fatti.",
        "cmp": "Confronta A='{0}' vs B='{1}': data, impatto, coin mappate, benzina narrativa, quale è più interessante per la strategia.",
@@ -265,24 +286,44 @@ def md_to_html(t):
 
 
 # ------------------------------------------------------------------ quota e archivio
-def quota_use():
+DD_GLOBAL = int(os.environ.get("DD_GLOBAL_PER_DAY", "15"))
+
+
+def _quota():
     st = jload("dd_quota.json", {})
     day = datetime.now().strftime("%Y-%m-%d")
-    st = {day: st.get(day, 0) + 1}
+    if st.get("_d") != day:
+        st = {"_d": day, "users": {}}
+    return st
+
+
+def quota_use(user):
+    st = _quota()
+    st["users"][str(user)] = st["users"].get(str(user), 0) + 1
     jsave("dd_quota.json", st)
 
 
-def quota_remaining():
-    st = jload("dd_quota.json", {})
-    return PER_DAY - st.get(datetime.now().strftime("%Y-%m-%d"), 0)
+def quota_remaining(user=None):
+    st = _quota()
+    return min(PER_DAY - st["users"].get(str(user), 0), DD_GLOBAL - sum(st["users"].values()))
 
 
-def run(kind, args):
+def previous_scores(text):
+    key = core.cluster_key(text)
+    low = text.lower().strip()
+    out = []
+    for a in jload("deepdives.json", []):
+        if a.get("tipo") in ("auto", "dd") and (core.cluster_key(a["oggetto"]) == key or low[:40] in a["oggetto"].lower()):
+            out.append({"data": a["data"], "punteggio": a.get("punteggio"), "verdetto": a.get("verdetto")})
+    return out[-3:]
+
+
+def run(kind, args, user=0):
     """Ritorna lista di messaggi HTML per Telegram."""
     if not GEMINI_KEY():
         return ["⚠️ Deep dive non attivo: manca la chiave <code>GEMINI_API_KEY</code> (gratuita su aistudio.google.com)."]
-    if quota_remaining() <= 0:
-        return ["Quota deep dive esaurita per oggi, riprova domani o usa il brief standard."]
+    if quota_remaining(user) <= 0:
+        return ["Quota Deep Analysis esaurita per oggi, riprova domani o usa il brief standard."]
     idx = jload("brief_index.json", [])
     facts, err = gather(kind, args, idx)
     if err:
@@ -292,17 +333,19 @@ def run(kind, args):
         text = llm(PROMPT.format(richiesta=req, fatti=json.dumps(facts, ensure_ascii=False, default=str)[:60000]))
     except RuntimeError as e:
         if str(e) == "QUOTA":
-            return ["Quota deep dive esaurita per oggi (limite Gemini), riprova domani o usa il brief standard."]
+            return ["Quota Deep Analysis esaurita per oggi (limite Gemini), riprova domani o usa il brief standard."]
         return [f"⚠️ Errore deep dive: {esc(str(e))[:300]}"]
-    quota_use()
+    quota_use(user)
     m = re.search(r"VERDETTO:\s*(Da monitorare|Pronta[^\n]*|Da evitare)", text, re.I)
     verdict = m.group(1).strip() if m else "n/d"
+    sm = re.search(r"PUNTEGGIO[^0-9\n]{0,40}(\d{1,3})\s*/\s*100", text, re.I)
+    score = int(sm.group(1)) if sm else None
     corr = re.search(r"CORREZIONE:\s*(.+)$", text.strip(), re.I | re.M)
     corr = corr.group(1).strip() if corr and not corr.group(1).strip().lower().startswith("nessuna") else ""
     obj = " / ".join(args)
     arch = jload("deepdives.json", [])
     arch.append({"data": datetime.now().strftime("%Y-%m-%d %H:%M"), "oggetto": obj, "tipo": kind, "verdetto": verdict,
-                 "correzione": corr, "report": text})
+                 "punteggio": score, "correzione": corr, "report": text})
     jsave("deepdives.json", arch[-60:])
     body = md_to_html(re.sub(r"\n?CORREZIONE:.*$", "", text.strip(), flags=re.I))
     out, cur = [], ""
@@ -312,7 +355,9 @@ def run(kind, args):
             cur = ""
         cur += para + "\n\n"
     out.append(cur)
-    out[-1] += f"\n<i>Deep dive salvato · verdetto: {esc(verdict)} · restanti oggi: {quota_remaining()}</i>"
+    if score is not None:
+        out[0] = f"<b>🎯 Punteggio {score}/100</b>\n\n" + out[0]
+    out[-1] += f"\n<i>Deep dive salvato · verdetto: {esc(verdict)} · restanti oggi per te: {max(0, quota_remaining(user))}</i>"
     return out
 
 
@@ -320,18 +365,18 @@ def archive_text(n=10):
     arch = jload("deepdives.json", [])[-n:]
     if not arch:
         return "Nessun deep dive salvato."
-    return "<b>📚 Ultimi deep dive</b>\n" + "\n".join(f'• {a["data"]} · <b>{esc(a["oggetto"][:60])}</b> → {esc(a["verdetto"])}' for a in reversed(arch))
+    return "<b>📚 Ultimi deep dive</b>\n" + "\n".join(f'• {a["data"]} · <b>{esc(a["oggetto"][:60])}</b> → {a.get("punteggio", "n/d")}/100 · {esc(a["verdetto"])}' for a in reversed(arch))
 
 
 def brief_blocks():
     """Per il brief: deep dive 'Pronta' e correzioni degli ultimi 3 giorni."""
     arch = jload("deepdives.json", [])
     cutoff = (datetime.now() - timedelta(days=3)).strftime("%Y-%m-%d %H:%M")
-    ready = [a for a in arch if a["data"] >= cutoff and a["verdetto"].lower().startswith("pronta")]
+    ready = [a for a in arch if a["data"] >= cutoff and a["verdetto"].lower().startswith("pronta") and (a.get("punteggio") or 0) >= 80]
     corr = [a for a in arch if a["data"] >= cutoff and a.get("correzione")]
     out = []
     for a in ready:
-        out.append(f'🚨 <b>Deep dive «Pronta»:</b> {esc(a["oggetto"][:80])} ({a["data"][:10]}) — rileggi il report con /archivio. Aggiorna il countdown.')
+        out.append(f'🚨 <b>Deep Analysis «Pronta» {a.get("punteggio")}/100:</b> {esc(a["oggetto"][:80])} ({a["data"][:10]}) — rileggi il report con /archivio. Aggiorna il countdown.')
     for a in corr:
         out.append(f'✏️ <b>Correzione:</b> {esc(a["correzione"][:200])} (da deep dive del {a["data"][:10]})')
     return out

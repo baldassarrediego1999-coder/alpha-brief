@@ -26,6 +26,7 @@ API = f"https://api.telegram.org/bot{TOKEN}"
 BRIEF_HOUR, URGENT_HOUR = 8, 18
 CHAINS = {"solana", "ethereum", "bsc", "base", "arbitrum", "polygon", "avalanche", "optimism"}
 _busy = threading.RLock()
+BOT_NAME = [""]
 
 
 def tg(method, **p):
@@ -40,7 +41,8 @@ KB = {"keyboard": [[{"text": "📰 Tutte le notizie"}, {"text": "🗞 Ultime not
                    [{"text": "🚨 Urgenti"}, {"text": "👤 Persone"}],
                    [{"text": "📊 Watchlist"}, {"text": "📆 Calendario mese"}]],
       "resize_keyboard": True, "is_persistent": True}
-LABELS = {"tutte le notizie": "/brief", "ultime notizie": "/ultime", "urgenti": "/urgenti",
+LABELS = {"brief": "/brief", "urgenti": "/urgenti", "ultime": "/ultime", "archivio": "/archivio", "fonti": "/fonti", "help": "/help",
+          "start": "/start", "mese": "/mese", "tutte le notizie": "/brief", "ultime notizie": "/ultime", "urgenti": "/urgenti",
           "persone": "/persone", "watchlist": "/watchlist", "calendario mese": "/mese"}
 
 
@@ -77,7 +79,7 @@ def subs():
 HELP = (
     "<b>📅 Brief — intelligence crypto, politica e macro</b>\n"
     "Ogni giorno alle 08:00 il brief completo, alle 18:00 il controllo urgenti.\n\n"
-    "<b>Deep dive</b> (max 3 al giorno): <code>approfondisci 3</code> · <code>deep dive su Ansem</code> · <code>deep dive watchlist PEPE</code> · <code>confronta A vs B</code> · <code>scenario …</code> · <code>storico …</code> · <code>chi compra TICKER</code> · /archivio\n\n"
+    "<b>Deep Analysis</b> (max 3 al giorno a testa): incolla qui qualsiasi news, titolo, evento o ticker (o scrivi il numero, es. <code>3</code>) e ricevi un punteggio di rilevanza /100 + report. Nei gruppi menziona il bot o rispondi a un suo messaggio. Anche: <code>approfondisci 3</code> · <code>deep dive su Ansem</code> · <code>deep dive watchlist PEPE</code> · <code>confronta A vs B</code> · <code>scenario …</code> · <code>storico …</code> · <code>chi compra TICKER</code> · /archivio\n\n"
     "<b>Comandi</b>\n"
     "/brief — brief completo adesso\n/urgenti — solo le cose 🔴\n/persone — ultime dichiarazioni\n"
     "/mese [AAAA-MM] — calendario mensile\n/fonti — controlla quali fonti rispondono\n\n"
@@ -157,20 +159,33 @@ def handle(upd):
     if not text or chat is None:
         return
     print(time.strftime("%H:%M:%S"), "cmd:", text[:80])
+    user = (msg.get("from") or {}).get("id", chat)
+    is_group = (msg.get("chat") or {}).get("type") in ("group", "supergroup")
+    plain = re.sub(r"[^a-zà-ù ]", "", text.lower()).strip()
+    if is_group and not text.startswith("/"):
+        # nei gruppi il Deep Analysis parte solo se menzioni il bot o rispondi a un suo messaggio
+        me = "@" + (BOT_NAME[0] or "").lower()
+        replied_to_bot = ((msg.get("reply_to_message") or {}).get("from") or {}).get("username", "").lower() == (BOT_NAME[0] or "").lower()
+        if me in text.lower() or replied_to_bot:
+            text = re.sub(re.escape(me), "", text, flags=re.I).strip()
+            plain = re.sub(r"[^a-zà-ù ]", "", text.lower()).strip()
+        else:
+            return
+    if plain in LABELS:
+        text = LABELS[plain]
     dd = None if text.startswith("/") else deepdive.parse(text)
     if dd:
         def go_dd(kind=dd[0], args=dd[1]):
-            send(chat, "🔍 Deep dive in corso (raccolgo fonti e scrivo il report, 1-2 minuti)…")
+            if deepdive.quota_remaining(user) <= 0:
+                return send(chat, "Quota Deep Analysis esaurita per oggi, riprova domani o usa il brief standard.")
+            send(chat, "🔍 Deep Analysis in corso (raccolgo fonti e scrivo il report, anche 2-5 minuti)…")
             try:
-                send_many(chat, deepdive.run(kind, args))
+                send_many(chat, deepdive.run(kind, args, user))
             except Exception as e:
                 traceback.print_exc()
-                send(chat, f"⚠️ Errore deep dive: {esc(repr(e))[:300]}")
+                send(chat, f"⚠️ Errore deep analysis: {esc(repr(e))[:300]}")
         threading.Thread(target=go_dd, daemon=True).start()
         return
-    plain = re.sub(r"[^a-zà-ù ]", "", text.lower()).strip()
-    if plain in LABELS:
-        text = LABELS[plain]
     cmd, _, arg = text.partition(" ")
     cmd = cmd.split("@")[0].lower()
     arg = arg.strip()
@@ -325,6 +340,7 @@ def main():
     if not TOKEN:
         sys.exit("Manca TELEGRAM_BOT_TOKEN nel file .env")
     me = tg("getMe").get("result", {})
+    BOT_NAME[0] = me.get("username", "")
     print("Bot avviato come @" + str(me.get("username")), flush=True)
     st = jload("tgstate.json", {"offset": 0})
     threading.Thread(target=scheduler, daemon=True).start()

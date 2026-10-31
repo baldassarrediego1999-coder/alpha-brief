@@ -266,7 +266,7 @@ def run(kind="full"):
     bad = [n for n, v in report.items() if not any(v)]
     blocks.append("<i>Fonti non accessibili ora: " + (", ".join(bad) if bad else "nessuna") +
                   ". Dati non presenti = \"non verificato\". Nessuna previsione, solo contesto.</i>")
-    blocks.append("💡 Rispondi con <code>approfondisci 3</code> (numero della voce #) o <code>deep dive su …</code> per un'analisi complessa su un singolo punto. Altri: confronta A vs B · scenario … · storico … · chi compra TICKER · deep dive watchlist TICKER.")
+    blocks.append("💡 Copia e incolla qui qualsiasi news, titolo, evento o ticker (o scrivi il numero, es. <code>3</code>) per un <b>Deep Analysis con punteggio di rilevanza</b>.")
     jsave("brief_index.json", INDEX)
     state["narr"] = {n["name"]: n["phase"] for n in nar}
     _finish(state, clusters, seen, now, items, nar)
