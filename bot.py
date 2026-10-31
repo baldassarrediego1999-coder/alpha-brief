@@ -77,6 +77,7 @@ def subs():
 HELP = (
     "<b>📅 Brief — intelligence crypto, politica e macro</b>\n"
     "Ogni giorno alle 08:00 il brief completo, alle 18:00 il controllo urgenti.\n\n"
+    "<b>Deep dive</b> (max 3 al giorno): <code>approfondisci 3</code> · <code>deep dive su Ansem</code> · <code>deep dive watchlist PEPE</code> · <code>confronta A vs B</code> · <code>scenario …</code> · <code>storico …</code> · <code>chi compra TICKER</code> · /archivio\n\n"
     "<b>Comandi</b>\n"
     "/brief — brief completo adesso\n/urgenti — solo le cose 🔴\n/persone — ultime dichiarazioni\n"
     "/mese [AAAA-MM] — calendario mensile\n/fonti — controlla quali fonti rispondono\n\n"
