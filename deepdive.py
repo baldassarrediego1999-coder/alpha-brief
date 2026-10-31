@@ -149,6 +149,7 @@ REGOLE ASSOLUTE:
 - Usa ESCLUSIVAMENTE i FATTI forniti sotto (JSON). Non inventare date, fonti, dichiarazioni, contract address, percentuali, precedenti storici. Se un dato non è nei fatti scrivi "non verificato" e perché.
 - Cita le fonti con nome e tier e link presi dai fatti. Se le fonti si contraddicono riporta entrambe e dì quale ha tier migliore.
 - Distingui annuncio ORIGINALE da RIESUMATO guardando le date.
+- Link: scrivili SEMPRE in formato markdown [nome fonte](url), mai URL nudi. Non superare 1500 parole: sii denso, usa tabelle e punti elenco.
 - Nessuna previsione certa e nessun consiglio finanziario: scenari e probabilità qualitative con motivazione.
 - Segnali on-chain: dai solo quelli presenti nei fatti; per il resto indica dove guardare gratis (GMGN, Arkham free, Solscan, DEXScreener) senza inventare valori.
 RICHIESTA: {richiesta}
@@ -216,7 +217,7 @@ def llm(prompt):
                 r = requests.post(f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
                                   params={"key": key},
                                   json={"contents": [{"parts": [{"text": prompt}]}],
-                                        "generationConfig": {"temperature": 0.25, "maxOutputTokens": 8192}}, timeout=180)
+                                        "generationConfig": {"temperature": 0.25, "maxOutputTokens": 6000}}, timeout=180)
             except Exception as e:
                 last = f"{model}: {type(e).__name__}"
                 time.sleep(4)
@@ -241,10 +242,25 @@ def llm(prompt):
 
 
 def md_to_html(t):
-    t = html.escape(t)
+    lines = []
+    for ln in t.split("\n"):
+        s = ln.strip()
+        if s.startswith("|"):
+            if re.fullmatch(r"\|[\s:|-]+\|?", s):
+                continue                                   # riga separatrice della tabella
+            cells = [c.strip() for c in s.strip("|").split("|")]
+            if all(re.fullmatch(r"[A-Za-zÀ-ÿ /]+", c) for c in cells) and not lines[-1:] == ["__row__"]:
+                ln = "<b>" + " · ".join(cells) + "</b>"    # intestazione
+                lines.append(html.escape(ln, quote=False).replace("&lt;b&gt;", "<b>").replace("&lt;/b&gt;", "</b>"))
+                lines.append("__row__")
+                continue
+            ln = "• " + " · ".join(cells)
+        lines.append(html.escape(ln, quote=False) if not ln.startswith("<b>") else ln)
+    t = "\n".join(l for l in lines if l != "__row__")
     t = re.sub(r"^#{1,4}\s*(.+)$", r"<b>\1</b>", t, flags=re.M)
     t = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", t)
-    t = re.sub(r"(?<!\*)\*(?!\s)(.+?)(?<!\s)\*(?!\*)", r"<i>\1</i>", t)
+    t = re.sub(r"\[([^\]]+)\]\((https?://[^)\s]+)\)", r'<a href="\2">\1</a>', t)
+    t = re.sub(r"(?<![*\w])\*(?!\s)([^*\n]+?)(?<!\s)\*(?![*\w])", r"<i>\1</i>", t)
     return t
 
 
