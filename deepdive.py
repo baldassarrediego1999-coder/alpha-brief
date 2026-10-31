@@ -227,7 +227,7 @@ def pick_models(key):
     return _model["list"]
 
 
-def llm(prompt):
+def llm(prompt, json_mode=False):
     key = GEMINI_KEY()
     if not key:
         raise RuntimeError("NO_KEY")
@@ -238,7 +238,7 @@ def llm(prompt):
                 r = requests.post(f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
                                   params={"key": key},
                                   json={"contents": [{"parts": [{"text": prompt}]}],
-                                        "generationConfig": {"temperature": 0.25, "maxOutputTokens": 6000}}, timeout=180)
+                                        "generationConfig": {"temperature": 0.2 if json_mode else 0.25, "maxOutputTokens": 8000 if json_mode else 6000, **({"responseMimeType": "application/json"} if json_mode else {})}}, timeout=180)
             except Exception as e:
                 last = f"{model}: {type(e).__name__}"
                 time.sleep(4)

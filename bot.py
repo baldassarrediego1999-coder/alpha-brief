@@ -41,7 +41,7 @@ KB = {"keyboard": [[{"text": "📰 Tutte le notizie"}, {"text": "🗞 Ultime not
                    [{"text": "🚨 Urgenti"}, {"text": "👤 Persone"}],
                    [{"text": "📊 Watchlist"}, {"text": "📆 Calendario mese"}]],
       "resize_keyboard": True, "is_persistent": True}
-LABELS = {"brief": "/brief", "urgenti": "/urgenti", "ultime": "/ultime", "archivio": "/archivio", "fonti": "/fonti", "help": "/help",
+LABELS = {"huge": "/huge", "big catalyst": "/huge", "brief": "/brief", "urgenti": "/urgenti", "ultime": "/ultime", "archivio": "/archivio", "fonti": "/fonti", "help": "/help",
           "start": "/start", "mese": "/mese", "tutte le notizie": "/brief", "ultime notizie": "/ultime", "urgenti": "/urgenti",
           "persone": "/persone", "watchlist": "/watchlist", "calendario mese": "/mese"}
 
@@ -173,9 +173,33 @@ def handle(upd):
             return
     if plain in LABELS:
         text = LABELS[plain]
-    dd = None if text.startswith("/") else deepdive.parse(text)
+    pend = jload("pending.json", {})
+    if plain in ("si", "sì", "yes", "ok vai", "vai") and str(user) in pend and time.time() - pend[str(user)]["ts"] < 1800:
+        text = pend.pop(str(user))["text"]
+        jsave("pending.json", pend)
+        dd = ("auto", [text])
+    else:
+        dd = None if text.startswith("/") else deepdive.parse(text)
+    skip_huge = str(user) in pend and dd and dd[0] == "auto" and dd[1][0] == pend[str(user)]["text"]
+    if skip_huge:
+        pend.pop(str(user), None)
+        jsave("pending.json", pend)
     if dd:
-        def go_dd(kind=dd[0], args=dd[1]):
+        def go_dd(kind=dd[0], args=dd[1], check_huge=(dd[0] == "auto" and not skip_huge)):
+            if check_huge:
+                send(chat, "🔍 Controllo se è un huge announcement…")
+                try:
+                    card = brief.huge_card_for_text(args[0])
+                except Exception:
+                    traceback.print_exc()
+                    card = None
+                if card:
+                    send_many(chat, card)
+                    p = jload("pending.json", {})
+                    p[str(user)] = {"text": args[0], "ts": time.time()}
+                    jsave("pending.json", p)
+                    send(chat, "Vuoi un <b>Deep Analysis completo</b> su questo? Rispondi <b>sì</b> o incolla di nuovo l'annuncio.")
+                    return
             if deepdive.quota_remaining(user) <= 0:
                 return send(chat, "Quota Deep Analysis esaurita per oggi, riprova domani o usa il brief standard.")
             send(chat, "🔍 Deep Analysis in corso (raccolgo fonti e scrivo il report, anche 2-5 minuti)…")
@@ -222,6 +246,8 @@ def handle(upd):
                 traceback.print_exc()
                 send(chat, f"⚠️ Errore: {esc(repr(e))[:300]}")
         threading.Thread(target=go, daemon=True).start()
+    elif cmd == "/huge":
+        threading.Thread(target=run_brief, args=(chat, "huge"), daemon=True).start()
     elif cmd == "/urgenti":
         threading.Thread(target=run_brief, args=(chat, "urgent"), daemon=True).start()
     elif cmd == "/persone":
