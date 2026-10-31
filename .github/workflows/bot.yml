@@ -1,0 +1,37 @@
+name: Alpha Brief bot
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+concurrency:
+  group: alpha-brief
+  cancel-in-progress: false
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    env:
+      TZ: Europe/Rome
+      DATA_DIR: ${{ github.workspace }}/data
+      RUN_SECONDS: "20400"
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - name: Ripristina dati (watchlist, iscritti, storico)
+        uses: actions/cache/restore@v4
+        with:
+          path: data
+          key: state-restore
+          restore-keys: state-
+      - name: Bot
+        run: python bot.py
+      - name: Salva dati
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: data
+          key: state-${{ github.run_id }}
