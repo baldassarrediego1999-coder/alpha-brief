@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 
 import requests
 
-import brief, core
+import brief, core, deepdive
 from core import esc, jload, jsave
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -156,6 +156,17 @@ def handle(upd):
     if not text or chat is None:
         return
     print(time.strftime("%H:%M:%S"), "cmd:", text[:80])
+    dd = None if text.startswith("/") else deepdive.parse(text)
+    if dd:
+        def go_dd(kind=dd[0], args=dd[1]):
+            send(chat, "🔍 Deep dive in corso (raccolgo fonti e scrivo il report, 1-2 minuti)…")
+            try:
+                send_many(chat, deepdive.run(kind, args))
+            except Exception as e:
+                traceback.print_exc()
+                send(chat, f"⚠️ Errore deep dive: {esc(repr(e))[:300]}")
+        threading.Thread(target=go_dd, daemon=True).start()
+        return
     plain = re.sub(r"[^a-zà-ù ]", "", text.lower()).strip()
     if plain in LABELS:
         text = LABELS[plain]
@@ -182,6 +193,8 @@ def handle(upd):
         send(chat, "🔕 Brief automatici spenti.")
     elif cmd == "/brief":
         threading.Thread(target=run_brief, args=(chat, "full"), daemon=True).start()
+    elif cmd == "/archivio":
+        send(chat, deepdive.archive_text())
     elif cmd == "/ultime":
         def go():
             try:

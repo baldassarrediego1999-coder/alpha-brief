@@ -2,7 +2,7 @@
 import re
 from datetime import datetime, timedelta, timezone
 
-import core
+import core, deepdive
 from core import NOW, esc, humanize, local, countdown, jload, jsave
 
 LIMIT = 3800
@@ -32,6 +32,13 @@ def src_line(c):
 
 
 WL_EMPTY = [True]
+INDEX = []          # voci numerate del brief: servono a "approfondisci N"
+
+
+def num(kind, title, link, source):
+    n = len(INDEX) + 1
+    INDEX.append({"n": n, "kind": kind, "title": title, "link": link, "source": source})
+    return n
 
 
 def pick(cs, n, used):
@@ -55,7 +62,8 @@ def fmt_news(c, with_coin=True, country=False):
     lvl = core.alert_level(c, now)
     title = c["title_it"]
     tag = "  ♻️ <i>recuperata</i>" if c.get("recovered") else ""
-    lines = [f'{lvl} <b>{esc(title)}</b>{tag}',
+    n = num("news", c["title"], c["link"], c["source"])
+    lines = [f'{lvl} <b>#{n}</b> <b>{esc(title)}</b>{tag}',
              f'   {local(c["pub"])} · {humanize(c["pub"], now)} · chi: {esc(c["source"])} · {src_line(c)}',
              f'   {c["origin"]} · impatto <b>{c["impact"]}</b>']
     if c["cat"] == "politica":
@@ -73,7 +81,8 @@ def fmt_event(e, now):
     meme = f'\n   🐸 meme: {esc(e["memes"])}' if e.get("memes") else ""
     tt = f' (T{e["tier"]})'
     link = f'<a href="{esc(e["link"])}">{esc(e["source"])}</a>{tt}' if e.get("link") else f'{esc(e["source"])}{tt}'
-    return (f'📌 <b>{esc(e["name"][:140])}</b>\n   {e["date"].astimezone().strftime("%d/%m %H:%M")} · '
+    n = num("evento", e["name"], e.get("link", ""), e.get("source", ""))
+    return (f'📌 <b>#{n}</b> <b>{esc(e["name"][:140])}</b>\n   {e["date"].astimezone().strftime("%d/%m %H:%M")} · '
             f'⏳ <b>{countdown(e["date"], now)}</b> · {esc(e["cat"])}\n   cosa cambia: {esc(e["what"] or "non specificato")}'
             f'{meme}\n   {link}')
 
@@ -99,6 +108,7 @@ def translate_clusters(cs):
 def run(kind="full"):
     """kind: full | urgent. Ritorna (messaggi, riepilogo_dati)."""
     now = NOW()
+    INDEX.clear()
     state = jload("state.json", {})
     seen = state.get("seen", {})
     last_run = datetime.fromisoformat(state["last_run"]) if state.get("last_run") else None
@@ -143,8 +153,11 @@ def run(kind="full"):
         blocks.append(fmt_news(c))
     for e in urgent_ev[:6]:
         blocks.append("⏳ catalyst entro 7 giorni\n" + fmt_event(e, now))
+    for extra in deepdive.brief_blocks():
+        blocks.append(extra)
     if kind == "urgent":
         _finish(state, clusters, seen, now, items)
+        jsave("brief_index.json", INDEX)
         return chunk(blocks), report
 
     # ---------------- TOP CRYPTO
@@ -253,6 +266,8 @@ def run(kind="full"):
     bad = [n for n, v in report.items() if not any(v)]
     blocks.append("<i>Fonti non accessibili ora: " + (", ".join(bad) if bad else "nessuna") +
                   ". Dati non presenti = \"non verificato\". Nessuna previsione, solo contesto.</i>")
+    blocks.append("💡 Rispondi con <code>approfondisci 3</code> (numero della voce #) o <code>deep dive su …</code> per un'analisi complessa su un singolo punto. Altri: confronta A vs B · scenario … · storico … · chi compra TICKER · deep dive watchlist TICKER.")
+    jsave("brief_index.json", INDEX)
     state["narr"] = {n["name"]: n["phase"] for n in nar}
     _finish(state, clusters, seen, now, items, nar)
     return chunk(blocks), report
@@ -342,6 +357,7 @@ def latest(n=25):
     w = core.wl_load()
     cs = core.process(items, w, state.get("seen", {}), last_run)
     now = NOW()
+    INDEX.clear()
     cs = sorted([c for c in cs if (now - c["pub"]).days <= 2], key=lambda c: c["pub"], reverse=True)[:n]
     translate_clusters(cs)
     WL_EMPTY[0] = not w
