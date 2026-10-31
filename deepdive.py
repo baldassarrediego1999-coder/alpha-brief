@@ -192,7 +192,16 @@ def pick_models(key):
         names.sort(key=lambda n: ([int(x) for x in re.findall(r"\d+", n)], "lite" not in n), reverse=True)
     except Exception:
         pass
-    _model["list"] = (names[:4] or ["gemini-2.0-flash"])
+    fam, picked = set(), []
+    for n in names:                                  # un modello per famiglia (3.5, 2.5, 2.0...): se una e' sovraccarica passa alla successiva
+        k = tuple(re.findall(r"\d+", n)[:2])
+        if k not in fam:
+            fam.add(k)
+            picked.append(n)
+    for n in names:                                  # poi le varianti rimaste come ultima spiaggia
+        if n not in picked:
+            picked.append(n)
+    _model["list"] = (picked[:6] or ["gemini-2.0-flash"])
     return _model["list"]
 
 
@@ -202,7 +211,7 @@ def llm(prompt):
         raise RuntimeError("NO_KEY")
     last = ""
     for model in pick_models(key):
-        for attempt in range(2):
+        for attempt in range(1):
             try:
                 r = requests.post(f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
                                   params={"key": key},
@@ -226,7 +235,7 @@ def llm(prompt):
                 time.sleep(6)
                 continue
             break
-    if "quota" in last:
+    if "quota" in last and "503" not in last:
         raise RuntimeError("QUOTA")
     raise RuntimeError("Gemini non disponibile adesso (" + last + "). Riprova tra qualche minuto: la quota di oggi non è stata consumata.")
 
