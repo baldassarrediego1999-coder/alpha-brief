@@ -227,18 +227,18 @@ def pick_models(key):
     return _model["list"]
 
 
-def llm(prompt, json_mode=False):
+def llm(prompt, json_mode=False, timeout=180, max_models=6):
     key = GEMINI_KEY()
     if not key:
         raise RuntimeError("NO_KEY")
     last = ""
-    for model in pick_models(key):
+    for model in pick_models(key)[:max_models]:
         for attempt in range(1):
             try:
                 r = requests.post(f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
                                   params={"key": key},
                                   json={"contents": [{"parts": [{"text": prompt}]}],
-                                        "generationConfig": {"temperature": 0.2 if json_mode else 0.25, "maxOutputTokens": 16000 if json_mode else 6000, **({"responseMimeType": "application/json"} if json_mode else {})}}, timeout=180)
+                                        "generationConfig": {"temperature": 0.2 if json_mode else 0.25, "maxOutputTokens": 16000 if json_mode else 6000, **({"responseMimeType": "application/json"} if json_mode else {})}}, timeout=timeout)
             except Exception as e:
                 last = f"{model}: {type(e).__name__}"
                 time.sleep(4)

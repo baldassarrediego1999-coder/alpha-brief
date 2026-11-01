@@ -38,7 +38,9 @@ VOCI:
 
 
 def _call(entries):
-    txt = deepdive.llm(PROMPT + json.dumps(entries, ensure_ascii=False), json_mode=True)
+    big = len(entries) > 3                      # brief intero: piu' tempo; testo incollato: risposta rapida o stima a regole
+    txt = deepdive.llm(PROMPT + json.dumps(entries, ensure_ascii=False), json_mode=True,
+                       timeout=120 if big else 45, max_models=4 if big else 2)
     txt = re.sub(r"^```(?:json)?|```$", "", txt.strip(), flags=re.M).strip()
     arr = json.loads(txt)
     out = {}
