@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 
 import requests
 
-import brief, core, deepdive
+import brief, calendar_view, core, deepdive
 from core import esc, jload, jsave
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -43,7 +43,35 @@ KB = {"keyboard": [[{"text": "📰 Tutte le notizie"}, {"text": "🗞 Ultime not
       "resize_keyboard": True, "is_persistent": True}
 LABELS = {"huge": "/huge", "big catalyst": "/huge", "brief": "/brief", "urgenti": "/urgenti", "ultime": "/ultime", "archivio": "/archivio", "fonti": "/fonti", "help": "/help",
           "start": "/start", "mese": "/mese", "tutte le notizie": "/brief", "ultime notizie": "/ultime", "urgenti": "/urgenti",
-          "persone": "/persone", "watchlist": "/watchlist", "calendario mese": "/mese"}
+          "persone": "/persone", "watchlist": "/watchlist", "calendario mese": "/mese", "settimana": "/settimana",
+          "futuri": "/futuri", "eventi futuri": "/futuri", "oggi": "/oggi"}
+CN_PER_DAY, CN_GLOBAL = 10, 60
+CONNECT_RX = re.compile(r"^(?:connetti|collega(?:\s+questa)?)\b\s*[:\-]?\s*(.*)$", re.I | re.S)
+
+
+def cn_quota_take(user):
+    """NEWS CONNECTOR: 10 al giorno a testa, 60 in totale (limite del free tier). True se disponibile."""
+    st = jload("cn_quota.json", {})
+    today = datetime.now().strftime("%Y-%m-%d")
+    if st.get("day") != today:
+        st = {"day": today, "users": {}}
+    if st["users"].get(str(user), 0) >= CN_PER_DAY or sum(st["users"].values()) >= CN_GLOBAL:
+        return False
+    st["users"][str(user)] = st["users"].get(str(user), 0) + 1
+    jsave("cn_quota.json", st)
+    return True
+
+
+def run_connector(chat, user, text):
+    if not cn_quota_take(user):
+        return send(chat, "Quota NEWS CONNECTOR esaurita per oggi (10 a testa, free tier). Riprova domani.")
+    send(chat, "🧩 Collego la news (narrativa, catalyst, coin)…")
+    try:
+        card, conn = brief.text_cards(text)
+        send_many(chat, conn)
+    except Exception as e:
+        traceback.print_exc()
+        send(chat, f"⚠️ Errore connector: {esc(repr(e))[:300]}")
 
 
 def send(chat, text):
@@ -82,7 +110,8 @@ HELP = (
     "<b>Deep Analysis</b> (max 3 al giorno a testa): incolla qui qualsiasi news, titolo, evento o ticker (o scrivi il numero, es. <code>3</code>) e ricevi un punteggio di rilevanza /100 + report. Nei gruppi menziona il bot o rispondi a un suo messaggio. Anche: <code>approfondisci 3</code> · <code>deep dive su Ansem</code> · <code>deep dive watchlist PEPE</code> · <code>confronta A vs B</code> · <code>scenario …</code> · <code>storico …</code> · <code>chi compra TICKER</code> · /archivio\n\n"
     "<b>Comandi</b>\n"
     "/brief — brief completo adesso\n/urgenti — solo le cose 🔴\n/persone — ultime dichiarazioni\n"
-    "/mese [AAAA-MM] — calendario mensile\n/fonti — controlla quali fonti rispondono\n\n"
+    "/mese [AAAA-MM] — calendario di TUTTI i giorni del mese · /settimana — 7 giorni · /futuri — prossimi 60 giorni · /oggi\n"
+    "/huge — big catalyst · <code>connetti [news]</code> — solo NEWS CONNECTOR (incollando una news arriva in automatico)\n/fonti — controlla quali fonti rispondono\n\n"
     "<b>Watchlist</b>\n"
     "<code>/add TICKER [chain] [narrativa]</code> oppure <code>/add INDIRIZZO</code>\n"
     "<code>/kw TICKER parola1, parola2</code> — parole per mappare le news alla coin\n"
@@ -173,6 +202,13 @@ def handle(upd):
             return
     if plain in LABELS:
         text = LABELS[plain]
+    mc = CONNECT_RX.match(text) if not text.startswith("/") else None
+    if mc:
+        body = mc.group(1).strip() or ((msg.get("reply_to_message") or {}).get("text") or "").strip()
+        if len(body) < 3:
+            return send(chat, "Uso: <code>connetti [news incollata]</code> oppure rispondi a una news del brief con <code>collega questa</code>.")
+        threading.Thread(target=run_connector, args=(chat, user, body[:3000]), daemon=True).start()
+        return
     pend = jload("pending.json", {})
     if plain in ("si", "sì", "yes", "ok vai", "vai") and str(user) in pend and time.time() - pend[str(user)]["ts"] < 1800:
         text = pend.pop(str(user))["text"]
@@ -187,18 +223,22 @@ def handle(upd):
     if dd:
         def go_dd(kind=dd[0], args=dd[1], check_huge=(dd[0] == "auto" and not skip_huge)):
             if check_huge:
-                send(chat, "🔍 Controllo se è un huge announcement…")
+                if not cn_quota_take(user):
+                    return send(chat, "Quota NEWS CONNECTOR esaurita per oggi (10 a testa). Per un Deep Analysis diretto scrivi <code>deep dive su ...</code>.")
+                send(chat, "🔍 Controllo huge announcement e collego la news…")
                 try:
-                    card = brief.huge_card_for_text(args[0])
+                    card, conn = brief.text_cards(args[0])
                 except Exception:
                     traceback.print_exc()
-                    card = None
-                if card:
-                    send_many(chat, card)
+                    card, conn = None, None
+                if conn:
+                    if card:
+                        send_many(chat, card)
+                    send_many(chat, conn)
                     p = jload("pending.json", {})
                     p[str(user)] = {"text": args[0], "ts": time.time()}
                     jsave("pending.json", p)
-                    send(chat, "Vuoi un <b>Deep Analysis completo</b> su questo? Rispondi <b>sì</b> o incolla di nuovo l'annuncio.")
+                    send(chat, "Vuoi un <b>Deep Analysis completo</b> su questo? Rispondi <b>sì</b> (valido 30 minuti).")
                     return
             if deepdive.quota_remaining(user) <= 0:
                 return send(chat, "Quota Deep Analysis esaurita per oggi, riprova domani o usa il brief standard.")
@@ -263,8 +303,23 @@ def handle(upd):
                     lines.append(f'• <b>{esc(p["name"])}</b>: {p["status"]}' + (f' ({p["note"]})' if p["note"] else ""))
             send_many(chat, brief.chunk(["\n".join(lines)]))
         threading.Thread(target=go, daemon=True).start()
-    elif cmd == "/mese":
-        send_many(chat, brief.chunk(["<b>📆 CALENDARIO MENSILE</b>\n" + brief.month_text(month=arg or None)]))
+    elif cmd in ("/mese", "/settimana", "/futuri", "/oggi"):
+        def go(cmd=cmd, arg=arg):
+            try:
+                ww = core.wl_load()
+                if cmd == "/mese":
+                    blocks = calendar_view.month_blocks(ww, arg or None)
+                elif cmd == "/settimana":
+                    blocks = calendar_view.week_blocks(ww)
+                elif cmd == "/oggi":
+                    blocks = calendar_view.today_block(ww)
+                else:
+                    blocks = calendar_view.upcoming_blocks(ww)
+                send_many(chat, blocks)
+            except Exception as e:
+                traceback.print_exc()
+                send(chat, f"⚠️ Errore calendario: {esc(repr(e))[:300]}")
+        threading.Thread(target=go, daemon=True).start()
     elif cmd == "/fonti":
         def go():
             rep = {}

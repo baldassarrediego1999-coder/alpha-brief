@@ -2,7 +2,7 @@
 import re
 from datetime import datetime, timedelta, timezone
 
-import core, deepdive, relevance
+import calendar_view, core, deepdive, relevance
 from core import NOW, esc, humanize, local, countdown, jload, jsave
 
 LIMIT = 3800
@@ -11,7 +11,15 @@ PHASE_ORDER = {"fading": 0, "emerging": 1, "rising": 2, "peak": 3}
 
 def chunk(blocks):
     msgs, cur = [], ""
-    for b in blocks:
+    parts = []
+    for b in blocks:                       # un blocco troppo lungo viene spezzato sulle righe
+        while len(b) > LIMIT:
+            cut = b.rfind("\n", 0, LIMIT)
+            cut = cut if cut > 0 else LIMIT
+            parts.append(b[:cut])
+            b = b[cut:].lstrip("\n")
+        parts.append(b)
+    for b in parts:
         if len(cur) + len(b) + 2 > LIMIT:
             msgs.append(cur)
             cur = ""
@@ -85,7 +93,19 @@ def fmt_news(c, with_coin=True, country=False):
         lines.append(f'   ⏳ catalyst {c["when"].strftime("%d/%m")} (countdown {countdown(c["when"], now)})')
     if with_coin and not WL_EMPTY[0]:
         lines.append("   🪙 impatta: " + (", ".join(c["watch"]) if c["watch"] else "nessuna coin in watchlist"))
+    lines += connector_lines(c, 2 if c["cat"] == "politica" else 3)
     return "\n".join(lines)
+
+
+def connector_lines(c, n=3):
+    """NEWS CONNECTOR sintetico: n punti pertinenti + catena visiva."""
+    cn = c.get("cn") or []
+    if not cn:
+        return []
+    out = ["   🧩 <b>CONNECTOR</b>"] + [f"    • {esc(x)}" for x in cn[:n]]
+    if c.get("map"):
+        out.append(f"    🔗 {esc(c['map'])}")
+    return out
 
 
 def fmt_huge(c, phase_by_title=None):
@@ -143,7 +163,8 @@ def _entries(cands, evs, pl, w, now):
         ents.append({"id": f"c{i}", "key": c["key"], "h": c["score"], "titolo": c["title_it"][:200], "fonte": c["source"],
                      "tier": c["tier"], "eta_ore": age_h, "categoria": c["cat"], "n_fonti": len(c["sources"]),
                      "origine": c["origin"], "catalyst": c["when"].strftime("%Y-%m-%d") if c.get("when") else None,
-                     "coin_watchlist": c["watch"]})
+                     "coin_watchlist": c["watch"],
+                     "temi": [n for n, rx in core.THEMES.items() if rx.search(c["title"])][:3]})
     for i, e in enumerate(evs):
         days = (e["date"] - now).days
         ents.append({"id": f"e{i}", "key": "ev:" + core.cluster_key(e["name"]) + e["date"].strftime("%m%d"), "h": 6 if days <= 7 else 3,
@@ -182,8 +203,8 @@ def run(kind="full"):
     cands = sorted(clusters, key=lambda c: -c["score"])[:34]
     translate_clusters(cands)
 
-    evs = core.manual_events() + core.macro_events() + core.news_events(items)
-    evs = [e for e in dedupe_events(evs) if now - timedelta(hours=12) <= e["date"] <= now + timedelta(days=30)]
+    evs_all = dedupe_events(core.manual_events() + core.macro_events() + core.news_events(items))
+    evs = [e for e in evs_all if now - timedelta(hours=12) <= e["date"] <= now + timedelta(days=30)]
     for e in evs:                                # mappatura narrativa -> coin in watchlist
         hits = core.wl_match({"title": e["name"] + " " + e["what"]}, w)
         if hits:
@@ -200,6 +221,7 @@ def run(kind="full"):
         r = res[f"c{i}"]
         age_h = (now - c["pub"]).total_seconds() / 3600
         c.update({"pct": r["pct"], "why": r["why"], "auto": r.get("auto", False), "crit": r.get("crit"),
+                  "cn": r.get("cn"), "map": r.get("map", ""),
                   "hc": relevance.huge_of(c["title"], r), "day": "oggi" if age_h < 48 else "fuori"})
         if c["day"] == "fuori":
             c["why_out"] = ("catalyst ancora futuro" if c.get("when") and c["when"] > now else "riesumata" if c["origin"] == "Riesumata"
@@ -209,6 +231,10 @@ def run(kind="full"):
         r = res[f"e{i}"]
         e.update({"pct": r["pct"], "why": r["why"], "auto": r.get("auto", False)})
     wl_pct = {t: res[f"w{t}"] for t in w if f"w{t}" in res}
+    try:                                         # il calendario completo ricorda gli eventi (anche a 60-90 giorni)
+        calendar_view.save_events(evs_all)
+    except Exception as ex:
+        print("calendar save errore:", repr(ex)[:150], flush=True)
     auto_any = any(c.get("auto") for c in cands)
 
     crypto = [c for c in cands if c["cat"] == "crypto"]
@@ -295,6 +321,9 @@ def run(kind="full"):
         if not any(c["region"] == reg for c in pp):
             blocks.append(f"ℹ️ Nessuna news rilevante da fonti {label} oggi (o fonti non accessibili).")
 
+    # ---------------- OGGI NEL CALENDARIO (vista giornaliera)
+    blocks += calendar_view.today_block(w)
+
     # ---------------- EVENTI
     blocks.append("<b>🗓️ EVENTI IN ARRIVO (30 giorni)</b>")
     shown = sorted(evs_s, key=lambda e: (-(e.get("pct") or 0), e["date"]))[:12]
@@ -347,8 +376,7 @@ def run(kind="full"):
         blocks.append(fmt_wl(t, c, clusters, now) + extra)
 
     # ---------------- CALENDARIO MENSILE
-    blocks.append("<b>📆 CALENDARIO MENSILE</b> (ultime notizie importanti per giorno, vedi /mese per il mese intero)")
-    blocks.append(month_text(limit_days=7))
+    blocks += calendar_view.month_extract(w)
 
     # ---------------- RED FLAG
     blocks.append("<b>⚠️ RED FLAG DEL GIORNO</b>")
@@ -379,7 +407,7 @@ def run(kind="full"):
     bad = [n for n, v in report.items() if not any(v)]
     blocks.append("<i>Fonti non accessibili ora: " + (", ".join(bad) if bad else "nessuna") +
                   ". Dati non presenti = \"non verificato\". Nessuna previsione, solo contesto.</i>")
-    blocks.append("📎 Copia e incolla qui qualsiasi news, titolo, evento o ticker (o scrivi il numero, es. <code>3</code>) per un <b>Deep Analysis con punteggio di rilevanza</b>. Scrivi <code>huge</code> per vedere solo i big catalyst del giorno.")
+    blocks.append("📎 Copia e incolla qui qualsiasi news, titolo, evento o ticker (o scrivi il numero, es. <code>3</code>) per un <b>Deep Analysis con punteggio di rilevanza</b>. Comandi: <code>huge</code> big catalyst · <code>mese</code> calendario di tutti i giorni · <code>settimana</code> 7 giorni · <code>futuri</code> prossimi 60 giorni · <code>connetti [news]</code> solo NEWS CONNECTOR.")
     jsave("brief_index.json", INDEX)
     state["narr"] = {n["name"]: n["phase"] for n in nar}
     _finish(state, clusters_all, seen, now, items, nar, stats_extra)
@@ -413,21 +441,6 @@ def fmt_wl(t, c, clusters, now):
     return (f'<b>${esc(t)}</b> · {esc(c.get("chain", "?"))} · {status}\n   ATH {ath} · drawdown {dd}\n   {mk}'
             f'\n   narrativa: {esc(c.get("narrative") or "—")}{cat}{rel}'
             f'\n   segnale on-chain: non verificato (nessuna fonte gratuita affidabile)')
-
-
-def month_text(limit_days=None, month=None):
-    h = jload("history.json", {})
-    month = month or datetime.now().strftime("%Y-%m")
-    days = sorted((d for d in h if d.startswith(month)), reverse=True)
-    if limit_days:
-        days = days[:limit_days]
-    if not days:
-        return "Storico ancora vuoto: si riempie a ogni brief."
-    lines = []
-    for d in days:
-        for n in h[d]:
-            lines.append(f'<b>{d[8:]}/{d[5:7]}</b> · {esc(n["title"][:100])} · {esc(n["who"])} · {n["cat"]} · T{n["tier"]}')
-    return "\n".join(lines)
 
 
 def _avg(stats, week):
@@ -485,6 +498,42 @@ def latest(n=25):
     WL_EMPTY[0] = not w
     head = f"<b>🗞 ULTIME NOTIZIE — {datetime.now().strftime('%d/%m %H:%M')}</b> (ordine cronologico, {len(cs)} notizie)"
     return chunk([head] + [fmt_news(c, country=True) for c in cs])
+
+
+def fmt_connector(text, r, ent, when, now):
+    """NEWS CONNECTOR completo per un testo incollato."""
+    head = f'🧩 <b>NEWS CONNECTOR</b> — {relevance.band(r["pct"])} <b>{pct_txt(r)}</b> rilevanza'
+    cn = "\n".join(f"• {esc(x)}" for x in (r.get("cn") or ["nessun collegamento rilevante"]))
+    cd = f'⏳ catalyst {when.strftime("%d/%m")} · countdown <b>{countdown(when, now)}</b>' if when else "⏳ nessuna data certa nel testo (non verificato)"
+    wl = ", ".join(ent["coin_watchlist"]) or "nessuna in watchlist"
+    mp = f'\n🔗 {esc(r["map"])}' if r.get("map") else ""
+    auto = "\n<i>Stima automatica: Gemini non era disponibile.</i>" if r.get("auto") else ""
+    return (f'{head}\n<i>{esc(text[:140])}</i>\n{cn}{mp}\n💬 {esc(r.get("why", ""))}\n{cd}\n🪙 coin: {esc(wl)}{auto}')
+
+
+def text_cards(text):
+    """Testo incollato -> (scheda huge o None, [messaggio NEWS CONNECTOR]). Una sola valutazione Gemini."""
+    now = NOW()
+    w = core.wl_load()
+    INDEX.clear()
+    base = relevance.huge_criteria(text)
+    ent = {"id": "x", "key": "txt:" + core.cluster_key(text), "h": 8, "titolo": text[:300], "categoria": "incollato",
+           "eta_ore": 0, "coin_watchlist": core.wl_match({"title": text}, w),
+           "temi": [n for n, rx in core.THEMES.items() if rx.search(text)][:3]}
+    res, _ = relevance.score([ent])
+    r = res["x"]
+    hc = relevance.huge_of(text, r)
+    d = core.parse_dates(text, now)
+    when = d if d and d > now else None
+    WL_EMPTY[0] = not w
+    card = None
+    if len(hc) >= 2 or len(base) >= 2:
+        c = {"title": text, "title_it": text[:200], "link": "", "source": "testo incollato", "tier": 3,
+             "sources": [("testo incollato", "", 3)], "pub": now, "origin": "Originale", "when": when,
+             "watch": ent["coin_watchlist"], "red": bool(core.RED_KW.search(text)), "pct": r["pct"], "why": r["why"],
+             "auto": r.get("auto", False), "hc": hc if len(hc) >= 2 else base, "day": "oggi", "cat": "crypto", "impact": "n/d"}
+        card = [fmt_huge(c)]
+    return card, [fmt_connector(text, r, ent, when, now)]
 
 
 def huge_card_for_text(text):

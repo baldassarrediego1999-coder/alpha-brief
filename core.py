@@ -624,5 +624,5 @@ def history_add(clusters):
     h = jload("history.json", {})
     day = datetime.now().strftime("%Y-%m-%d")
     top = [c for c in clusters if c["score"] >= 5][:6]
-    h[day] = [{"title": c["title"], "who": c["source"], "cat": c["cat"], "tier": c["tier"], "link": c["link"]} for c in top]
+    h[day] = [{"title": c["title"], "who": c["source"], "cat": c["cat"], "tier": c["tier"], "link": c["link"], "pct": c.get("pct")} for c in top]
     jsave("history.json", h)
