@@ -346,7 +346,13 @@ def macro_events():
 
 def manual_events():
     out = []
-    for e in jload("events.json", []):
+    try:                                         # eventi iniziali nel repository + quelli aggiunti con /evento (DATA_DIR)
+        seed = json.load(open(os.path.join(HERE, "events.json"), encoding="utf-8"))
+    except Exception:
+        seed = []
+    mine = jload("events.json", [])
+    uniq = {(e.get("name"), e.get("date")): e for e in seed + mine}
+    for e in uniq.values():
         try:
             d = datetime.fromisoformat(e["date"]).replace(tzinfo=timezone.utc)
             out.append({"name": e["name"], "date": d, "cat": e.get("cat", "Crypto"), "what": e.get("what", ""),
