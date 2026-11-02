@@ -3,9 +3,11 @@ on:
   schedule:
     - cron: "*/30 * * * *"
   workflow_dispatch:
+  push:
+    branches: [main]
 concurrency:
   group: alpha-brief
-  cancel-in-progress: false
+  cancel-in-progress: ${{ github.event_name == 'push' }}
 jobs:
   run:
     runs-on: ubuntu-latest
