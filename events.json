@@ -3,18 +3,99 @@
   "name": "Elezioni USA di midterm",
   "date": "2026-11-03",
   "cat": "Politica",
-  "what": "voto per Camera, Senato e governatori; spesso volatilità sui mercati",
+  "what": "voto per Camera, Senato e governatori; spesso volatilità sui mercati e sulle leggi crypto in sospeso",
   "memes": "",
-  "link": "https://www.usa.gov/election",
-  "source": "calendario elettorale USA"
+  "link": "https://www.coindesk.com/markets/2026/11/02/binance-hack-fallout-u-s-midterms-and-jobs-report-crypto-week-ahead",
+  "source": "CoinDesk"
  },
  {
-  "name": "Pump.fun: Elysium trading nell'app",
+  "name": "Kite (KITE): unlock 640M token (~17% supply)",
+  "date": "2026-11-03",
+  "cat": "Unlock",
+  "what": "sblocco token a un anno dal trading; pressione di vendita possibile, importo da verificare sul tracker",
+  "memes": "",
+  "link": "https://www.kucoin.com/news/flash/three-major-token-unlocks-to-watch-in-first-week-of-november-2026",
+  "source": "KuCoin News"
+ },
+ {
+  "name": "Zcash: upgrade NU7 (blocchi da 75s a 25s)",
+  "date": "2026-11-05",
+  "cat": "Protocollo",
+  "what": "upgrade di rete, data indicata come 'intorno al 5 novembre' (da confermare)",
+  "memes": "",
+  "link": "https://crypto.com/us/market-updates/best-altcoins-november-2026",
+  "source": "Crypto.com (data approssimativa)"
+ },
+ {
+  "name": "Hyperliquid (HYPE): unlock team token",
+  "date": "2026-11-06",
+  "cat": "Unlock",
+  "what": "le fonti danno importi in contrasto (da 180k a 9,9M HYPE): verificare su Tokenomist prima di darlo per buono",
+  "memes": "",
+  "link": "https://coinalertnews.com/news/2026/10/30/hyperliquid-november-token-unlocks",
+  "source": "KuCoin / CoinAlert (dati contrastanti)"
+ },
+ {
+  "name": "Pump.fun: Elysium trading nell'app (mainnet Elysium)",
   "date": "2026-11-09",
   "cat": "Protocollo",
-  "what": "trading Elysium aggiunto all'app di pump.fun (annunciato da The Defiant/TokenPost)",
+  "what": "trading Elysium (rollup su HyperEVM) nell'app di pump.fun; Fomo partner di trading. Non riguarda il launchpad Solana. Collegamento diretto agli order book di Hyperliquid atteso circa 4 settimane dopo",
   "memes": "coin legate a pump.fun / Hyperliquid",
-  "link": "https://thedefiant.io",
-  "source": "The Defiant (da verificare)"
+  "link": "https://thedefiant.io/news/defi/pump-fun-sets-nov-9-start-for-elysium-trading-in-its-app",
+  "source": "The Defiant, Bankless, KuCoin, TokenPost"
+ },
+ {
+  "name": "Allora: unlock token",
+  "date": "2026-11-11",
+  "cat": "Unlock",
+  "what": "importo non verificato (fonte unica)",
+  "memes": "",
+  "link": "https://cryptolaxy.com/unlocks/november-2026",
+  "source": "Cryptolaxy (fonte unica, da verificare)"
+ },
+ {
+  "name": "Pieverse: unlock token",
+  "date": "2026-11-14",
+  "cat": "Unlock",
+  "what": "importo non verificato (fonte unica)",
+  "memes": "",
+  "link": "https://cryptolaxy.com/unlocks/november-2026",
+  "source": "Cryptolaxy (fonte unica, da verificare)"
+ },
+ {
+  "name": "Stellar: voto validatori Bell (Protocol 30) su mainnet",
+  "date": "2026-11-23",
+  "cat": "Protocollo",
+  "what": "voto sull'upgrade Bell per la mainnet (testnet il 3 novembre)",
+  "memes": "",
+  "link": "https://crypto.com/us/market-updates/best-altcoins-november-2026",
+  "source": "Crypto.com"
+ },
+ {
+  "name": "Monad (MON): unlock token",
+  "date": "2026-11-24",
+  "cat": "Unlock",
+  "what": "importo non verificato (fonte unica)",
+  "memes": "",
+  "link": "https://cryptolaxy.com/unlocks/november-2026",
+  "source": "Cryptolaxy (fonte unica, da verificare)"
+ },
+ {
+  "name": "Huma Finance: unlock token",
+  "date": "2026-11-26",
+  "cat": "Unlock",
+  "what": "importo non verificato (fonte unica)",
+  "memes": "",
+  "link": "https://cryptolaxy.com/unlocks/november-2026",
+  "source": "Cryptolaxy (fonte unica, da verificare)"
+ },
+ {
+  "name": "Kinetiq: unlock token",
+  "date": "2026-11-27",
+  "cat": "Unlock",
+  "what": "importo non verificato (fonte unica)",
+  "memes": "",
+  "link": "https://cryptolaxy.com/unlocks/november-2026",
+  "source": "Cryptolaxy (fonte unica, da verificare)"
  }
 ]
