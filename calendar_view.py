@@ -46,7 +46,10 @@ def all_events(with_macro=True):
                 evs.append({**x, "date": datetime.fromisoformat(x["t"])})
             except Exception:
                 continue
-    evs += core.manual_events()
+    manual = core.manual_events()
+    mnames = {(_day(e["date"]), core.cluster_key(e["name"])) for e in manual}
+    evs = [e for e in evs if (_day(e["date"]), core.cluster_key(e["name"])) not in mnames]   # la versione inserita a mano vince
+    evs += manual
     if with_macro:
         try:
             evs += core.macro_events()
